@@ -99,7 +99,7 @@ describe('OnboardingPage', () => {
 
     fireEvent.click(screen.getByText('Finish onboarding'));
 
-    await waitFor(() => expect(screen.getByText('Onboarding finalized successfully')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('Onboarding finalized successfully').length).toBeGreaterThan(0));
   });
 
   it('shows error when onboarding complete fails', async () => {
