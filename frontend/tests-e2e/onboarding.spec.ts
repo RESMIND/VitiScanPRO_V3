@@ -1,8 +1,8 @@
-import { test, expect, request } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-test('user can complete onboarding wizard', async ({ page, context }) => {
+test('user can complete onboarding wizard', async ({ page, context, request }) => {
   // Create a test user via API
   const username = `e2e+${Date.now()}@vitiscan.test`;
   const password = 'Test123!@#';

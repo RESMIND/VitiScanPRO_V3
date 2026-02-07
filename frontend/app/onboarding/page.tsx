@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 
 export default function OnboardingPage() {
@@ -35,10 +35,13 @@ export default function OnboardingPage() {
     setLoading(true);
     setSendStatus(null);
     try {
-      const resp = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/send-verification-code`, { phone });
+      const resp = await axios.post<{ message?: string }>(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/send-verification-code`, { phone });
       setSendStatus(resp.data.message || "Code sent");
-    } catch (e: any) {
-      setSendStatus(e?.response?.data?.detail || "Failed to send code");
+    } catch (err: unknown) {
+      // Safely extract error detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail;
+      setSendStatus(detail || "Failed to send code");
     } finally {
       setLoading(false);
     }
@@ -48,11 +51,13 @@ export default function OnboardingPage() {
     setLoading(true);
     setMessage(null);
     try {
-      const resp = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/verify-phone-code`, { phone, code });
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/verify-phone-code`, { phone, code });
       setVerified(true);
       next();
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Invalid code");
+    } catch (err: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail;
+      setMessage(detail || "Invalid code");
     } finally {
       setLoading(false);
     }
@@ -69,7 +74,7 @@ export default function OnboardingPage() {
       }
       const token = localStorage.getItem("jwt_token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const resp = await axios.post(
+      const resp = await axios.post<{ establishment_id: string }>(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/onboarding/complete`,
         { establishment_name: estName, address, siret },
         { headers }
@@ -83,32 +88,15 @@ export default function OnboardingPage() {
       }
       setMessage("Onboarding finalized successfully");
       next();
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Failed to complete onboarding");
+    } catch (err: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail;
+      setMessage(detail || "Failed to complete onboarding");
     } finally {
       setLoading(false);
     }
   };
 
-  const submit = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const token = localStorage.getItem("jwt_token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const resp = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/onboarding/complete`,
-        { establishment_name: estName, address, siret },
-        { headers }
-      );
-      setMessage("Onboarding finalized successfully");
-      next();
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Failed to complete onboarding");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="max-w-2xl mx-auto p-6">
@@ -119,7 +107,7 @@ export default function OnboardingPage() {
       {step === 1 && (
         <div>
           <h2 className="font-medium">Welcome</h2>
-          <p className="mb-4">Let's set up your farm profile.</p>
+          <p className="mb-4">Let&apos;s set up your farm profile.</p>
           <button className="btn btn-primary" onClick={next}>Start</button>
         </div>
       )}
