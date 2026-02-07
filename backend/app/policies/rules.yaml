@@ -1,0 +1,106 @@
+# Authorization Policies for VitiScan v3
+# Combines RBAC, ABAC, and ReBAC
+
+# ==========================================
+# RBAC - Role-Based Access Control
+# ==========================================
+rbac:
+  admin:
+    parcel: [view, edit, delete, create, manage, export]
+    establishment: [view, edit, delete, create, manage]
+    crop: [view, edit, delete, create, manage]
+    scan: [view, edit, delete, create, manage, export]
+    user: [view, edit, delete, create, manage]
+    beta_request: [view, edit, delete, manage]
+  
+  user:
+    parcel: [view, edit, create]
+    establishment: [view, edit, create]
+    crop: [view, edit, create]
+    scan: [view, create]
+  
+  consultant:
+    parcel: [view, edit]
+    establishment: [view]
+    crop: [view, edit]
+    scan: [view, create, export]
+  
+  agronom:
+    parcel: [view]
+    establishment: [view]
+    crop: [view]
+    scan: [view, export]
+
+# ==========================================
+# ABAC - Attribute-Based Access Control
+# ==========================================
+abac:
+  require_mfa_for_delete:
+    condition: "action == 'delete' and subject.attrs.mfa != true"
+    effect: deny
+    reason: "Multi-Factor Authentication (MFA) required for delete operations"
+  
+  restrict_region_access:
+    condition: "resource.attrs.region and subject.attrs.region != resource.attrs.region"
+    effect: deny
+    reason: "User region does not match resource region (cross-region access denied)"
+  
+  high_risk_user:
+    condition: "subject.attrs.risk_score > 70"
+    effect: deny
+    reason: "User risk score exceeds threshold (security restriction)"
+  
+  certified_parcels_read_only:
+    condition: "resource.attrs.certified == true and action in ['edit', 'delete']"
+    effect: deny
+    reason: "Certified parcels are read-only (requires admin approval for changes)"
+  
+  working_hours_only:
+    condition: "subject.attrs.access_time not in ['08:00-18:00']"
+    effect: deny
+    reason: "Access restricted to working hours (8AM-6PM)"
+
+# ==========================================
+# ReBAC - Relationship-Based Access Control
+# ==========================================
+rebac:
+  owner_full_access:
+    relation: owner
+    actions: [view, edit, delete, manage, export]
+    description: "Parcel/establishment owner has full control"
+  
+  consultant_read_write:
+    relation: consultant
+    actions: [view, edit, export]
+    description: "Consultants can view and edit, but not delete"
+  
+  viewer_read_only:
+    relation: viewer
+    actions: [view]
+    description: "Viewers have read-only access"
+  
+  collaborator_contribute:
+    relation: collaborator
+    actions: [view, create, edit]
+    description: "Collaborators can contribute but not delete"
+  
+  auditor_export_only:
+    relation: auditor
+    actions: [view, export]
+    description: "Auditors can view and export data for compliance"
+
+# ==========================================
+# Special Cases & Exceptions
+# ==========================================
+special_rules:
+  beta_approval_admin_only:
+    resource_type: beta_request
+    action: manage
+    required_role: admin
+    reason: "Only admins can approve/reject beta requests"
+  
+  scan_analysis_consultant_priority:
+    resource_type: scan
+    action: create
+    preferred_roles: [consultant, agronom]
+    reason: "Consultants and agronomists have priority for scan analysis"
