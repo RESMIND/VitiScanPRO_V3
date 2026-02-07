@@ -14,7 +14,8 @@ export default function EphySearchBar({ onSelect }: EphySearchBarProps) {
 
   useEffect(() => {
     if (query.length < 2) {
-      setResults([]);
+      // Avoid synchronous setState within effect
+      Promise.resolve().then(() => setResults([]));
       return;
     }
     const timer = setTimeout(async () => {

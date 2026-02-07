@@ -69,7 +69,8 @@ export default function CalendarEventModal({ parcelId, onClose }: CalendarEventM
       });
     }
 
-    setCalendarDays(days);
+    // Avoid calling setState synchronously within effect body
+    Promise.resolve().then(() => setCalendarDays(days));
   }, [currentDate]);
 
   const monthName = currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
