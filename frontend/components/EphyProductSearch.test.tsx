@@ -77,7 +77,10 @@ describe('EphyProductSearch', () => {
     fireEvent.click(screen.getByText('Produit Vigne'));
 
     await waitFor(() => {
-      expect(screen.getByText('Usages viticoles: 1')).toBeInTheDocument();
+      const label = screen.getByText('Usages viticoles:');
+      expect(label).toBeInTheDocument();
+      // the numeric value is rendered as a separate node next to the label
+      expect(label.parentElement?.textContent).toContain('1');
     });
   });
 });

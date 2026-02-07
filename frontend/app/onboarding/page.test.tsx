@@ -89,10 +89,13 @@ describe('OnboardingPage', () => {
 
     // Step 4 - upload
     const file = new File(['logo'], 'logo.png', { type: 'image/png' });
-    const input = screen.getByLabelText(/Upload logo/i) || screen.getByRole('textbox') || screen.getByTestId('file-input') || screen.getByPlaceholderText('');
-    // Fallback: query input[type=file]
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-    fireEvent.change(fileInput, { target: { files: [file] } });
+    // Query safely for the file input
+    const fileInput = screen.queryByLabelText(/Upload logo/i) as HTMLInputElement | null
+      || document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+    if (fileInput) {
+      fireEvent.change(fileInput, { target: { files: [file] } });
+    }
 
     fireEvent.click(screen.getByText('Finish onboarding'));
 
@@ -101,6 +104,8 @@ describe('OnboardingPage', () => {
 
   it('shows error when onboarding complete fails', async () => {
     (axios.post as any).mockImplementation((url: string) => {
+      if (url.includes('/send-verification-code')) return Promise.resolve({ data: { message: 'Code sent' } });
+      if (url.includes('/verify-phone-code')) return Promise.resolve({ data: { ok: true } });
       if (url.includes('/onboarding/complete')) {
         return Promise.reject({ response: { data: { detail: 'Missing fields' } } });
       }
@@ -110,9 +115,15 @@ describe('OnboardingPage', () => {
     render(<OnboardingPage />);
 
     fireEvent.click(screen.getByText('Start'));
-    fireEvent.click(screen.getByText('Next'));
 
-    // skip verification logic, go to establishment details
+    // go through verification so we can reach establishment step
+    fireEvent.change(screen.getByPlaceholderText('Phone (+40...)'), { target: { value: '+40700123456' } });
+    fireEvent.click(screen.getByText('Send code'));
+    await waitFor(() => expect(screen.getByText('Code sent')).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText('Enter code'), { target: { value: '1234' } });
+    fireEvent.click(screen.getByText('Verify'));
+    await waitFor(() => expect(screen.getByText('Establishment details')).toBeInTheDocument());
+
     fireEvent.change(screen.getByPlaceholderText('Farm name'), { target: { value: 'F' } });
     fireEvent.click(screen.getByText('Next'));
 
