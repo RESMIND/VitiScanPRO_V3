@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 
 export default function OnboardingPage() {
@@ -81,26 +81,6 @@ export default function OnboardingPage() {
         form.append("file", logoFile);
         await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/establishments/${estId}/logo`, form, { headers: { ...headers, "Content-Type": "multipart/form-data" } });
       }
-      setMessage("Onboarding finalized successfully");
-      next();
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Failed to complete onboarding");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submit = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const token = localStorage.getItem("jwt_token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const resp = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/onboarding/complete`,
-        { establishment_name: estName, address, siret },
-        { headers }
-      );
       setMessage("Onboarding finalized successfully");
       next();
     } catch (e: any) {
