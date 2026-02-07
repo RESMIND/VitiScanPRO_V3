@@ -29,7 +29,8 @@ jobs:
 
       - name: Lint frontend
         run: npm run lint
-    continue-on-error: true        working-directory: frontend
+        continue-on-error: true
+    working-directory: frontend
 
       - name: Run Vitest unit tests
         run: npm test
