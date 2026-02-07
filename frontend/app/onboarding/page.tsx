@@ -90,26 +90,6 @@ export default function OnboardingPage() {
     }
   };
 
-  const submit = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const token = localStorage.getItem("jwt_token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const resp = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/onboarding/complete`,
-        { establishment_name: estName, address, siret },
-        { headers }
-      );
-      setMessage("Onboarding finalized successfully");
-      next();
-    } catch (e: any) {
-      setMessage(e?.response?.data?.detail || "Failed to complete onboarding");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h1 className="text-2xl font-semibold mb-4">Onboarding wizard</h1>
