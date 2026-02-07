@@ -1,0 +1,57 @@
+# Node
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.next/
+.build/
+dist/
+.cache/
+.vscode/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+env/
+.venv/
+venv/
+ENV/
+*.egg-info/
+build/
+dist/
+.eggs/
+*.egg
+pip-wheel-metadata/
+*.sqlite3
+*.log
+.pytest_cache/
+.coverage
+
+# IDEs
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Generated files
+htmlcov/
+
+# secrets
+secrets.json
+
+# local uploads
+uploads/
