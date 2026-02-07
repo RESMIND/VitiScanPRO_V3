@@ -1,4 +1,4 @@
 import { expect } from 'vitest';
-// Ensure jest-dom sees the Vitest expect in the global scope
-;(globalThis as any).expect = expect;
-import '@testing-library/jest-dom';
+// Register jest-dom matchers directly using Vitest's expect
+import matchers from '@testing-library/jest-dom/matchers';
+expect.extend(matchers as any);
