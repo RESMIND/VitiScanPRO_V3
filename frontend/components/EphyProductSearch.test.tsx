@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { vi } from 'vitest';
+import { vi, describe, it, expect } from 'vitest';
 
 import EphyProductSearch from './EphyProductSearch';
 
@@ -77,10 +77,10 @@ describe('EphyProductSearch', () => {
     fireEvent.click(screen.getByText('Produit Vigne'));
 
     await waitFor(() => {
+      // Find the label and assert its parent contains the count (handles nested markup)
       const label = screen.getByText('Usages viticoles:');
       expect(label).toBeInTheDocument();
-      // the numeric value is rendered as a separate node next to the label
-      expect(label.parentElement?.textContent).toContain('1');
+      expect(label.parentElement?.textContent).toMatch(/Usages viticoles:\s*1/);
     });
   });
 });
