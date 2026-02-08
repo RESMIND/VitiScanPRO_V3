@@ -90,13 +90,16 @@ async def test_db():
 async def test_user():
     """Create test user"""
     return {
-        "username": "test@vitiscan.com",
+        "username": "test-ci@vitiscan.dev",
         "password": "Test123!@#",
         "language": "ro",
         "role": "user",
         "accept_terms": True,
         "accept_privacy": True,
-        "marketing_consent": False
+        "marketing_consent": False,
+        # Pre-mark phone verified for CI tests that require verified users
+        "phone": "+40700123456",
+        "phone_verified": True,
     }
 
 @pytest.fixture
@@ -113,10 +116,15 @@ async def admin_user():
     }
 
 @pytest.fixture
-async def auth_headers(client, test_user):
-    """Get authentication headers"""
-    # Register user
+async def auth_header(client, test_user):
+    """Get authentication header for a pre-seeded test user"""
+    # Register user (ignore duplicate errors if already present)
     await client.post("/register", json=test_user)
+
+    # Ensure user's phone and phone_verified flags are set directly in DB for tests
+    from app.core import database as database_module
+    await database_module.db["users"].update_one({"username": test_user["username"]}, {"$set": {"phone": test_user.get("phone"), "phone_verified": test_user.get("phone_verified", False)}}, upsert=False)
+
     # Login
     response = await client.post("/login", json={
         "username": test_user["username"],
@@ -124,3 +132,8 @@ async def auth_headers(client, test_user):
     })
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+# Backwards-compatible alias for tests that still use the plural name
+@pytest.fixture
+async def auth_headers(auth_header):
+    return auth_header
