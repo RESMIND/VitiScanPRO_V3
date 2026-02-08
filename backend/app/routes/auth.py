@@ -139,7 +139,12 @@ def increment_verification_attempts(phone: str) -> bool:
 )
 @limiter.limit("5/minute")
 async def register(request: Request, data: RegisterData):
-    identifier = (data.phone or data.username or "").strip()
+    # Prefer the explicit username/email when provided (contains '@'), otherwise use phone if present
+    if data.username and '@' in (data.username or ''):
+        identifier = data.username.strip()
+    else:
+        identifier = (data.phone or data.username or "").strip()
+
     if not identifier:
         raise HTTPException(status_code=400, detail="Phone number or username is required")
 
