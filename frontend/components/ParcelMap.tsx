@@ -101,7 +101,7 @@ export default function ParcelMap({
       const latLngs = layer.getLatLngs()[0];
       
       // Convert to GeoJSON coordinates format [lng, lat]
-      let latLngArray = latLngs.map((latlng: any) => [latlng.lng, latlng.lat]);
+      const latLngArray = latLngs.map((latlng: any) => [latlng.lng, latlng.lat]);
       
       // Close the polygon ring by adding the first coordinate at the end if it's not already closed
       if (latLngArray.length > 0) {
