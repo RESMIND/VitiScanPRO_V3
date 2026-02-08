@@ -18,8 +18,7 @@ jobs:
       mongo:
         image: mongo:6.0
         ports: ['27017:27017']
-        options: >-
-options: >
+        options: >
             --health-cmd "mongosh --eval \"db.adminCommand({ ping: 1 })\""
             --health-interval 10s
             --health-timeout 5s
@@ -90,5 +89,6 @@ options: >
       - name: Run Playwright E2E
         run: npx playwright test --reporter=list
         working-directory: frontend
+
 
 
