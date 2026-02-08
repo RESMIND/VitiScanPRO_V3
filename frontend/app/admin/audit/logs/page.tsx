@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ErrorAlert } from '@/components/UIComponents';
 import { adminAPI } from '@/lib/api';
 
@@ -12,7 +12,7 @@ interface AuditLog {
   resource_id: string;
   outcome: 'allow' | 'deny';
   mechanism?: string;
-  details?: any;
+  details?: Record<string, unknown> | unknown;
 }
 
 interface AuditStats {
@@ -37,12 +37,7 @@ export default function AuditLogsPage() {
   });
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
-  useEffect(() => {
-    fetchLogs();
-    fetchStats();
-  }, [filters]);
-
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
       setError('');
@@ -60,25 +55,50 @@ export default function AuditLogsPage() {
       setLogs(data?.logs || []);
     } catch (error) {
       console.error('Failed to fetch logs:', error);
-      const message = (error as any)?.response?.data?.detail || 'Eroare la încărcarea logurilor';
+      const message = (() => {
+        if (error instanceof Error) return error.message;
+        if (typeof error === 'object' && error !== null) {
+          const obj = error as Record<string, unknown>;
+          const response = obj.response as Record<string, unknown> | undefined;
+          const data = response?.data as Record<string, unknown> | undefined;
+          const detail = data?.detail;
+          if (typeof detail === 'string') return detail;
+        }
+        return 'Eroare la încărcarea logurilor';
+      })();
       setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const data = await adminAPI.getAuditStats(filters.days);
       setStats(data || null);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
-      const message = (error as any)?.response?.data?.detail || 'Eroare la încărcarea statisticilor';
+      const message = (() => {
+        if (error instanceof Error) return error.message;
+        if (typeof error === 'object' && error !== null) {
+          const obj = error as Record<string, unknown>;
+          const response = obj.response as Record<string, unknown> | undefined;
+          const data = response?.data as Record<string, unknown> | undefined;
+          const detail = data?.detail;
+          if (typeof detail === 'string') return detail;
+        }
+        return 'Eroare la încărcarea statisticilor';
+      })();
       setError(message);
     }
-  };
+  }, [filters.days]);
 
-  const getOutcomeBadge = (outcome: string) => {
+  useEffect(() => {
+    fetchLogs();
+    fetchStats();
+  }, [fetchLogs, fetchStats]);
+
+  const getOutcomeBadge = (outcome: AuditLog['outcome']) => {
     return outcome === 'allow' ? (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
         ✅ ALLOW

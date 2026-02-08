@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import { LoadingSpinner, ErrorAlert } from '@/components/UIComponents';
@@ -45,11 +45,19 @@ export default function AdminGlobalPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadGlobalData();
-  }, []);
+  const extractErrorMessage = (e: unknown, fallback = 'Eroare la prelucrare') => {
+    if (e instanceof Error) return e.message;
+    if (typeof e === 'object' && e !== null) {
+      const obj = e as Record<string, unknown>;
+      const response = obj.response as Record<string, unknown> | undefined;
+      const data = response?.data as Record<string, unknown> | undefined;
+      const detail = data?.detail;
+      if (typeof detail === 'string') return detail;
+    }
+    return fallback;
+  };
 
-  const loadGlobalData = async () => {
+  const loadGlobalData = useCallback(async () => {
     try {
       const [statsData, usersData, activityData] = await Promise.all([
         adminAPI.getGlobalStats(),
@@ -59,25 +67,29 @@ export default function AdminGlobalPanel() {
 
       setStats(statsData || null);
       setRecentUsers(usersData || []);
-      const activityLogs = (activityData?.logs || []).map((log: any) => ({
-        id: log._id || log.id,
-        user_id: log.user_id,
-        user_email: log.user_email || log.user_id,
-        action: log.action,
-        resource_type: log.resource_type,
-        resource_id: log.resource_id,
-        timestamp: log.timestamp || log.created_at,
+      const activityLogs = (activityData?.logs || []).map((log: { _id?: string; id?: string; user_id?: string; user_email?: string; action?: string; resource_type?: string; resource_id?: string; timestamp?: string; created_at?: string; ip_address?: string }) => ({
+        id: log._id || log.id || '',
+        user_id: log.user_id || '',
+        user_email: log.user_email || log.user_id || '',
+        action: log.action || '',
+        resource_type: log.resource_type || '',
+        resource_id: log.resource_id || '',
+        timestamp: log.timestamp || log.created_at || '',
         ip_address: log.ip_address || 'N/A'
       })) as RecentActivity[];
       setRecentActivity(activityLogs);
     } catch (error) {
       console.error('Error loading global data:', error);
-      const message = (error as any)?.response?.data?.detail || 'Eroare la încărcarea datelor';
+      const message = extractErrorMessage(error, 'Eroare la încărcarea datelor');
       setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadGlobalData();
+  }, [loadGlobalData]);
 
   const getPlanBadgeColor = (plan: string) => {
     switch (plan) {

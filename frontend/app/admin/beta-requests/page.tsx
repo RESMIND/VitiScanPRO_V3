@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ErrorAlert } from '@/components/UIComponents';
 import { adminAPI } from '@/lib/api';
 
@@ -36,36 +36,48 @@ export default function AdminBetaRequestsPage() {
   const [processing, setProcessing] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchRequests();
-  }, []);
+  const extractErrorMessage = (e: unknown, fallback = 'Eroare la prelucrare') => {
+    if (e instanceof Error) return e.message;
+    if (typeof e === 'object' && e !== null) {
+      const obj = e as Record<string, unknown>;
+      const response = obj.response as Record<string, unknown> | undefined;
+      const data = response?.data as Record<string, unknown> | undefined;
+      const detail = data?.detail;
+      if (typeof detail === 'string') return detail;
+    }
+    return fallback;
+  };
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     try {
       setError('');
       const data = await adminAPI.listBetaRequests();
-      const mapped = (data || []).map((req: any) => ({
-        id: req.id,
-        email: req.email,
-        phone: req.phone,
-        full_name: req.name || req.full_name,
-        company: req.farm_name || req.company,
-        region: req.region,
-        reason: req.reason,
-        status: req.status,
-        created_at: req.created_at,
+      const mapped = (data || []).map((req: { id?: string; email?: string; phone?: string; name?: string; full_name?: string; farm_name?: string; company?: string; region?: string; reason?: string; status?: 'pending' | 'approved' | 'rejected' | 'expired'; created_at?: string; approved_at?: string; rejected_at?: string; registration_token?: string }) => ({
+        id: req.id || '',
+        email: req.email || '',
+        phone: req.phone || '',
+        full_name: req.name || req.full_name || '',
+        company: req.farm_name || req.company || undefined,
+        region: req.region || undefined,
+        reason: req.reason || undefined,
+        status: (req.status as BetaRequest['status']) || 'pending',
+        created_at: req.created_at || new Date().toISOString(),
         processed_at: req.approved_at || req.rejected_at,
         register_token: req.registration_token,
       })) as BetaRequest[];
       setRequests(mapped);
     } catch (error) {
       console.error('Failed to fetch requests:', error);
-      const message = (error as any)?.response?.data?.detail || 'Eroare la încărcarea cererilor';
+      const message = extractErrorMessage(error, 'Eroare la încărcarea cererilor');
       setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [fetchRequests]);
 
   const handleApprove = async (requestId: string) => {
     setProcessing(requestId);
@@ -74,7 +86,7 @@ export default function AdminBetaRequestsPage() {
       await fetchRequests();
     } catch (error) {
       console.error('Failed to approve:', error);
-      const message = (error as any)?.response?.data?.detail || 'Eroare la aprobarea cererii';
+      const message = extractErrorMessage(error, 'Eroare la aprobarea cererii');
       setError(message);
     } finally {
       setProcessing(null);
@@ -88,14 +100,14 @@ export default function AdminBetaRequestsPage() {
       await fetchRequests();
     } catch (error) {
       console.error('Failed to reject:', error);
-      const message = (error as any)?.response?.data?.detail || 'Eroare la respingerea cererii';
+      const message = extractErrorMessage(error, 'Eroare la respingerea cererii');
       setError(message);
     } finally {
       setProcessing(null);
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: BetaRequest['status']) => {
     const badges = {
       pending: 'bg-yellow-100 text-yellow-800 border-yellow-300',
       approved: 'bg-green-100 text-green-800 border-green-300',
@@ -175,10 +187,10 @@ export default function AdminBetaRequestsPage() {
         <div className="bg-white rounded-lg shadow p-4 mb-6">
           <div className="flex items-center space-x-4">
             <span className="text-sm font-medium text-gray-700">Filtrer:</span>
-            {['all', 'pending', 'approved', 'rejected'].map((f) => (
+            {(['all', 'pending', 'approved', 'rejected'] as const).map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f as any)}
+                onClick={() => setFilter(f as 'all' | 'pending' | 'approved' | 'rejected')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   filter === f
                     ? 'bg-green-600 text-white'
