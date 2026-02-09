@@ -23,8 +23,11 @@ async def debug_login():
     else:
         print("❌ User not found in database")
 
-# Run debug first
-asyncio.run(debug_login())
+# Run debug first if DB available (skip in local dev without Mongo)
+if db is not None:
+    asyncio.run(debug_login())
+else:
+    print("Skipping debug login script - MongoDB not available in this environment")
 
 # Admin credentials
 admin_credentials = {

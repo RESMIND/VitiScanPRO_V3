@@ -150,10 +150,14 @@ async def approve_beta_request(
         if beta_request["status"] != "pending":
             raise HTTPException(status_code=400, detail=f"Request is already {beta_request['status']}")
         
-        # Generate registration token (valid 48 hours)
-        registration_token = secrets.token_urlsafe(32)
-        token_expiry = datetime.utcnow() + timedelta(hours=48)
-        
+        # Generate cryptographic registration token (AES-GCM + HMAC)
+        from app.core import registration_tokens as rt
+        token = rt.generate_registration_token(req_oid, beta_request["email"])
+        header_payload = rt.validate_registration_token(token)
+        payload = header_payload["payload"]
+        nonce = payload.get("nonce")
+        expires_at = datetime.utcfromtimestamp(header_payload["header"].get("expires_at"))
+
         # Update beta request
         await db["beta_requests"].update_one(
             {"_id": req_oid},
@@ -161,26 +165,34 @@ async def approve_beta_request(
                 "$set": {
                     "status": "approved",
                     "approved_at": datetime.utcnow(),
-                    "registration_token": registration_token,
-                    "token_expiry": token_expiry
+                    "token_expires_at": expires_at
                 }
             }
         )
-        
-        # Send approval email with registration link
+
+        # Save nonce in registration_tokens collection
+        await db["registration_tokens"].insert_one({
+            "nonce": nonce,
+            "beta_request_id": str(req_oid),
+            "status": "pending",
+            "created_at": datetime.utcnow(),
+            "expires_at": expires_at
+        })
+
+        # Send approval email with registration token (token is safe to include in link since encrypted + signed)
         base_url = config.FRONTEND_BASE_URL
         await email_notifier.send_beta_approved_email(
             to_email=beta_request["email"],
             name=beta_request["name"],
-            token=registration_token,
+            token=token,
             base_url=base_url
         )
-        
-        logger.info(f"Beta request approved: {request_id}")
-        
+
+        logger.info(f"Beta request approved and token generated: {request_id}")
+
         return {
             "message": "Request approved successfully! Email sent to user.",
-            "registration_token": registration_token
+            "registration_token": token
         }
     
     except HTTPException:
@@ -244,26 +256,32 @@ async def verify_beta_registration_token(token: str):
     Returns basic user info for completing registration
     """
     try:
-        beta_request = await db["beta_requests"].find_one({
-            "registration_token": token,
-            "status": "approved"
-        })
+        # Validate cryptographic token
+        from app.core import registration_tokens as rt
+        validated = rt.validate_registration_token(token)
+        payload = validated["payload"]
+        beta_request_id = payload.get("beta_request_id")
+        # Find beta request
+        from bson import ObjectId
+        req_oid = ObjectId(beta_request_id)
+        beta_request = await db["beta_requests"].find_one({"_id": req_oid})
 
-        if not beta_request:
+        if not beta_request or beta_request.get("status") != "approved":
             raise HTTPException(status_code=404, detail="Token invalid sau expirat")
 
-        token_expiry = beta_request.get("token_expiry")
-        if token_expiry and datetime.utcnow() > token_expiry:
-            raise HTTPException(status_code=400, detail="Token expirat")
-
-        if beta_request.get("completed_at"):
-            raise HTTPException(status_code=400, detail="Token deja utilizat")
+        # check registration_tokens nonce state
+        nonce = payload.get("nonce")
+        token_doc = await db["registration_tokens"].find_one({"nonce": nonce})
+        if not token_doc or token_doc.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="Token expirat sau deja utilizat")
 
         return {
             "email": beta_request.get("email"),
             "full_name": beta_request.get("name"),
             "farm_name": beta_request.get("farm_name")
         }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:

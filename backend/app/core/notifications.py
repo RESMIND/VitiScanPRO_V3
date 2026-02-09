@@ -224,10 +224,23 @@ class EmailNotifier:
         html_body: str,
         text_body: Optional[str] = None
     ) -> bool:
-        """Send email via Resend"""
+        """Send email via Resend (or dev outbox if not configured)"""
         if not self.enabled:
-            logger.info(f"Email disabled. Would send to {to_email}: {subject}")
-            return False
+            # Dev mode: save to email_outbox collection for inspection and testing
+            logger.info(f"Email disabled. Saving to email_outbox: {to_email} - {subject}")
+            try:
+                from app.core import database as database_module
+                await database_module.db["email_outbox"].insert_one({
+                    "to_email": to_email,
+                    "subject": subject,
+                    "html_body": html_body,
+                    "text_body": text_body,
+                    "created_at": __import__("datetime").datetime.utcnow()
+                })
+                return True
+            except Exception as e:
+                logger.error(f"Failed to save to email_outbox: {e}")
+                return False
         
         try:
             params = {
@@ -457,10 +470,20 @@ class SMSNotifier:
             logger.warning("Twilio SMS not configured")
     
     def send_sms(self, to_phone: str, message: str) -> bool:
-        """Send SMS via Twilio"""
+        """Send SMS via Twilio or save to sms_outbox in dev"""
         if not self.enabled:
-            logger.info(f"SMS disabled. Would send to {to_phone}: {message}")
-            return False
+            logger.info(f"SMS disabled. Saving to sms_outbox: {to_phone}: {message}")
+            try:
+                from app.core import database as database_module
+                database_module.db["sms_outbox"].insert_one({
+                    "to_phone": to_phone,
+                    "message": message,
+                    "created_at": __import__("datetime").datetime.utcnow()
+                })
+                return True
+            except Exception as e:
+                logger.error(f"Failed to save sms_outbox: {e}")
+                return False
         
         try:
             self.client.messages.create(

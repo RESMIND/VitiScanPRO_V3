@@ -2,6 +2,9 @@ import asyncio
 from app.core.database import db
 
 async def test_connection():
+    if db is None:
+        print("Skipping DB connection test - MongoDB not available")
+        return
     collections = await db.list_collection_names()
     print("MongoDB connection successful! Existing collections:", collections)
 

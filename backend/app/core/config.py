@@ -69,6 +69,10 @@ EPHY_DATASET_API_URL = os.getenv(
     "matieres-fertilisantes-et-supports-de-culture-adjuvants-produits-mixtes-et-melanges/",
 )
 EPHY_STORAGE_PATH = os.getenv("EPHY_STORAGE_PATH", "data/ephy/ephy.sqlite")
+
+# Registration token secret (Base64 or raw). If not set, a dev key is derived from JWT_SECRET_KEY
+REGISTRATION_SECRET_KEY = os.getenv("REGISTRATION_SECRET_KEY")
+
 EPHY_VITICULTURE_ONLY = os.getenv("EPHY_VITICULTURE_ONLY", "true").lower() == "true"
 
 # File Upload Configuration - V5.1 Fix

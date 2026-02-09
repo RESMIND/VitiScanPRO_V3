@@ -7,6 +7,20 @@ import httpx
 
 BASE_URL = "http://localhost:8000"
 
+# Skip these external integration scripts in automated test runs when the
+# backend isn't running locally (they are primarily for manual smoke testing).
+try:
+    from urllib.parse import urlparse
+    import socket
+    parsed_base = urlparse(BASE_URL)
+    host = parsed_base.hostname or 'localhost'
+    port = parsed_base.port or 80
+    sock = socket.create_connection((host, port), timeout=0.5)
+    sock.close()
+except Exception:
+    import pytest
+    pytest.skip("Backend server not running at BASE_URL - skipping external endpoint tests", allow_module_level=True)
+
 async def test_authz_check():
     """Test /authz/check endpoint"""
     print("\n🔍 Testing /authz/check endpoint...")

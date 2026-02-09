@@ -4,6 +4,10 @@ from datetime import datetime
 
 BASE_URL = "http://127.0.0.1:8000"
 
+# This file is a manual end-to-end script and should be skipped in automated test runs
+import pytest
+pytest.skip("Manual end-to-end script - skipping in automated test runs", allow_module_level=True)
+
 # Rezultate teste
 results = []
 
