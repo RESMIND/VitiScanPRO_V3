@@ -18,7 +18,7 @@ TEST_USER = {
     "email": "test@vitiscan.local",
     "password": "Test2026!Secure",
     "full_name": "Test Viticultor",
-    "phone": "+40700000000",
+    "phone": "+33600000000",
     "language": "en",
     "role": "user",
     "accept_terms": True,

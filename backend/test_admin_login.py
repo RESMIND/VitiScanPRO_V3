@@ -7,7 +7,7 @@ async def debug_login():
     print("🔍 Debugging login process...")
 
     # Check user in database
-    user = await db["users"].find_one({"$or": [{"phone": "+40700123456"}, {"username": "+40700123456"}]})
+    user = await db["users"].find_one({"$or": [{"phone": "+33612345678"}, {"username": "+33612345678"}]})
     if user:
         print("✅ User found in database")
         print(f"   ID: {user['_id']}")
@@ -31,7 +31,7 @@ else:
 
 # Admin credentials
 admin_credentials = {
-    "phone": "+40700123456",
+    "phone": "+33612345678",
     "password": "Admin123!@#"
 }
 

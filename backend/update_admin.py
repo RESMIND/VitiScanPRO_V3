@@ -5,7 +5,7 @@ async def update_admin_username():
     # Update admin user to have username set
     result = await db["users"].update_one(
         {"email": "admin@vitiscan.io"},
-        {"$set": {"username": "+40700123456"}}
+        {"$set": {"username": "+33612345678"}}
     )
 
     if result.modified_count > 0:

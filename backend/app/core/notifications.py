@@ -313,17 +313,19 @@ class EmailNotifier:
             text_body=text_body
         )
     
-    async def send_beta_rejected_email(self, to_email: str, name: str):
-        """Send rejection email"""
+    async def send_beta_rejected_email(self, to_email: str, name: str, reason: str | None = None, admin_notes: str | None = None):
+        """Send rejection email with optional reason text included politely"""
+        reason_text = reason or "We are unable to approve your request at this time."
         html_body = f"""
         <html>
           <body style="font-family: Arial, sans-serif; padding: 20px;">
             <h2 style="color: #dc2626;">Beta Access Request - Status</h2>
             <p>Hello {name},</p>
             <p>Thank you for your interest in <strong>VitiScan v3</strong>.</p>
-            <p>Unfortunately, at this time we cannot approve your request due to incompatibility with the current beta test version.</p>
+            <p>{reason_text}</p>
             <p>Our beta program is limited to a small number of users to ensure testing quality.</p>
             <p>We will contact you in the future when we expand access to the platform.</p>
+            <p style="margin-top: 20px; color: #666; font-size: 12px;">Note: {admin_notes or 'No additional notes provided.'}</p>
             <p style="margin-top: 40px;">Respectfully,<br><strong>The VitiScan Team</strong></p>
           </body>
         </html>
@@ -334,7 +336,7 @@ class EmailNotifier:
         
         Thank you for your interest in VitiScan v3.
         
-        Unfortunately, at this time we cannot approve your request due to incompatibility with the current beta test version.
+        {reason_text}
         
         We will contact you in the future when we expand access.
         

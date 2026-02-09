@@ -92,7 +92,20 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
 
 
 async def get_current_admin_user(user: dict = Depends(get_current_user)):
-    """Verify if user is admin"""
+    """Verify if user is admin (legacy check for role 'admin')"""
     if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Accès administrateur requis")
+        raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+def require_admin_roles(*roles: str):
+    """Dependency factory that ensures current user has one of the allowed roles.
+
+    Usage:
+        admin = Depends(require_admin_roles('super_admin', 'onboarding_admin'))
+    """
+    async def _dependency(user: dict = Depends(get_current_user)):
+        if user.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="Admin role required")
+        return user
+    return _dependency

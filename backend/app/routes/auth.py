@@ -17,6 +17,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 import logging
 
+from app.core.utils import normalize_username, is_valid_username, is_reserved_username
+
 router = APIRouter()
 from app.core import config
 limiter_storage_uri = config.RATE_LIMIT_REDIS_URL if getattr(config, 'RATE_LIMIT_REDIS_URL', None) and config.ENV == "production" else "memory://"
@@ -26,13 +28,29 @@ logger = logging.getLogger(__name__)
 SECRET_KEY = JWT_SECRET_KEY
 ALGORITHM = JWT_ALGORITHM
 
-PHONE_REGEX = re.compile(r"^(0033|\+33|0)[1-9][0-9]{8}$|^(\+40|0040)[7-9][0-9]{8}$")
+PHONE_REGEX = re.compile(r"^\+33[1-7][0-9]{8}$")
 
 def normalize_phone(raw_phone: str) -> str:
+    """Normalize various input formats to canonical +33XXXXXXXXX format.
+
+    Examples accepted as input: "06 12 34 56 78", "0033 6 12 34 56 78", "+33 6 12 34 56 78".
+    Output will be "+33612345678".
+    """
     cleaned = re.sub(r"[\s\.\-\(\)]", "", raw_phone or "")
-    return cleaned.strip()
+    cleaned = cleaned.strip()
+
+    # Convert leading international prefix 00xx -> +xx
+    if cleaned.startswith("00"):
+        cleaned = "+" + cleaned[2:]
+
+    # Convert national format starting with 0 (e.g., 0612345678) to +33XXXXXXXXX
+    if re.match(r"^0[1-9][0-9]{8}$", cleaned):
+        cleaned = "+33" + cleaned[1:]
+
+    return cleaned
 
 def is_valid_phone(raw_phone: str) -> bool:
+    # Validation expects the canonical +33... format
     return bool(PHONE_REGEX.match(raw_phone or ""))
 
 # Pydantic Models
@@ -44,6 +62,7 @@ class RegisterData(BaseModel):
     language: str
     role: str
     full_name: str | None = None
+    company_name: str | None = None
     accept_terms: bool  # V2.1 FIX: GDPR consent for Terms of Service
     accept_privacy: bool  # V2.1 FIX: GDPR consent for Privacy Policy
     marketing_consent: bool = False  # Optional marketing consent
@@ -139,24 +158,39 @@ def increment_verification_attempts(phone: str) -> bool:
 )
 @limiter.limit("5/minute")
 async def register(request: Request, data: RegisterData):
-    # Prefer the explicit username/email when provided (contains '@'), otherwise use phone if present
-    if data.username and '@' in (data.username or ''):
-        identifier = data.username.strip()
-    else:
-        identifier = (data.phone or data.username or "").strip()
+    # Determine registration identity: explicit username/email or phone
+    phone = None
+    username_value = None
 
-    if not identifier:
-        raise HTTPException(status_code=400, detail="Phone number or username is required")
-
-    # Allow registration with either phone number or email/username
-    if "@" in identifier:
-        username_value = identifier.lower()
-        phone = None
-    else:
-        phone = normalize_phone(identifier)
+    if data.username:
+        if '@' in data.username:
+            # Email provided
+            username_value = data.username.strip().lower()
+        else:
+            # Could be a phone or a chosen username
+            possible_phone = normalize_phone(data.username.strip())
+            if is_valid_phone(possible_phone):
+                phone = possible_phone
+                username_value = phone
+            else:
+                normalized_un = normalize_username(data.username)
+                if not is_valid_username(normalized_un):
+                    raise HTTPException(status_code=400, detail="Invalid username format")
+                if is_reserved_username(normalized_un):
+                    raise HTTPException(status_code=400, detail="Username is reserved")
+                username_value = normalized_un
+    elif data.phone:
+        phone = normalize_phone(data.phone)
         if not is_valid_phone(phone):
             raise HTTPException(status_code=400, detail="Invalid phone format")
+        # Legacy behavior: when only phone provided, use it as username for login convenience
         username_value = phone
+    else:
+        raise HTTPException(status_code=400, detail="Phone number or username is required")
+
+    # Normalize username_value to lowercase for email cases
+    if username_value and '@' in username_value:
+        username_value = username_value.lower()
 
     logger.info("Registration attempt")
     
@@ -176,9 +210,10 @@ async def register(request: Request, data: RegisterData):
             ]
         })
     else:
+        # Case-insensitive username uniqueness (regex with i flag) and email
         existing_user = await db["users"].find_one({
             "$or": [
-                {"username": username_value},
+                {"username": {"$regex": f'^{re.escape(username_value)}$', "$options": "i"}},
                 {"email": username_value}
             ]
         })
@@ -196,6 +231,7 @@ async def register(request: Request, data: RegisterData):
         "phone": phone,
         "email": data.email.lower() if data.email else None,
         "full_name": data.full_name,
+        "company_name": data.company_name if data.company_name else None,
         "password": hashed_password.decode('utf-8'),
         "role": data.role,
         "language": data.language,
@@ -351,7 +387,10 @@ async def login(request: Request, phone: str = Form(None), username: str = Form(
     if is_valid_phone(normalized):
         query = {"$or": [{"phone": normalized}, {"username": normalized}]}
     else:
-        query = {"$or": [{"username": identifier}, {"email": identifier.lower()}]}
+        # Normalize display username for matching and use case-insensitive match
+        from app.core.utils import normalize_username
+        normalized_username = normalize_username(identifier)
+        query = {"$or": [{"username": {"$regex": f'^{re.escape(normalized_username)}$', "$options": "i"}}, {"email": identifier.lower()}]}
 
     try:
         # Check if user exists

@@ -34,7 +34,7 @@ def print_info(msg):
 
 # Test data
 test_email = f"test_{datetime.now().strftime('%Y%m%d%H%M%S')}@vitiscan.test"
-test_phone = "+40712345678"
+test_phone = "+33612345678"
 
 def test_beta_request():
     print_section("TEST 1: Beta Request Flow")

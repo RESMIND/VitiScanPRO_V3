@@ -68,3 +68,73 @@ async def test_get_current_user_invalid_token(client: AsyncClient):
     """Test get current user with invalid token"""
     response = await client.get("/me", headers={"Authorization": "Bearer invalid_token"})
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_register_username_normalization(client: AsyncClient):
+    """Register with a display username and company_name and verify normalization and persistence"""
+    payload = {
+        "username": "Jean Pierre",
+        "password": "Pass123!@#",
+        "language": "ro",
+        "role": "user",
+        "accept_terms": True,
+        "accept_privacy": True,
+        "company_name": "Test Winery SRL"
+    }
+
+    response = await client.post("/register", json=payload)
+    assert response.status_code == 201
+
+    # Verify stored user
+    from app.core import database as database_module
+    user = await database_module.db["users"].find_one({"username": "jean-pierre"})
+    assert user is not None
+    assert user.get("company_name") == "Test Winery SRL"
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_username_case_insensitive(client: AsyncClient):
+    payload1 = {
+        "username": "Jean Pierre",
+        "password": "Pass123!@#",
+        "language": "ro",
+        "role": "user",
+        "accept_terms": True,
+        "accept_privacy": True
+    }
+    response1 = await client.post("/register", json=payload1)
+    assert response1.status_code == 201
+
+    payload2 = {
+        "username": "jean-pierre",
+        "password": "Pass123!@#",
+        "language": "ro",
+        "role": "user",
+        "accept_terms": True,
+        "accept_privacy": True
+    }
+    response2 = await client.post("/register", json=payload2)
+    assert response2.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_login_with_display_username(client: AsyncClient):
+    payload = {
+        "username": "Jean Login",
+        "password": "Pass123!@#",
+        "language": "ro",
+        "role": "user",
+        "accept_terms": True,
+        "accept_privacy": True
+    }
+    # Register
+    r = await client.post("/register", json=payload)
+    assert r.status_code == 201
+
+    # Login with the display username
+    login_resp = await client.post("/login", json={"username": "Jean Login", "password": "Pass123!@#"})
+    assert login_resp.status_code == 200
+    data = login_resp.json()
+    assert "access_token" in data
+

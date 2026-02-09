@@ -5,7 +5,7 @@ async def test_user_id():
     if db is None:
         print("Skipping user id debug script - MongoDB not available")
         return
-    user = await db["users"].find_one({"phone": "+40700123456"})
+    user = await db["users"].find_one({"phone": "+33612345678"})
     if user:
         print(f"User _id type: {type(user['_id'])}")
         print(f"User _id str: {str(user['_id'])}")

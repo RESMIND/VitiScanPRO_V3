@@ -8,7 +8,7 @@ async def insert_test_user():
     admin_users = [
         {
             "email": "admin@vitiscan.io",
-            "phone": "+40700123456",
+            "phone": "+33612345678",
             "password": "Admin123!@#",
             "full_name": "Administrator VitiScan"
         },

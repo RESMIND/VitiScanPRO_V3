@@ -19,8 +19,8 @@ async def test_email_outbox_saved():
 async def test_sms_outbox_saved():
     # Ensure outbox is empty
     await database_module.db["sms_outbox"].delete_many({})
-    sent = notifications.sms_notifier.send_verification_code("+40700123456", "123456")
+    sent = notifications.sms_notifier.send_verification_code("+33612345678", "123456")
     # send_verification_code returns True when saved to outbox
     assert sent is True
-    count = await database_module.db["sms_outbox"].count_documents({"to_phone": "+40700123456"})
+    count = await database_module.db["sms_outbox"].count_documents({"to_phone": "+33612345678"})
     assert count >= 1

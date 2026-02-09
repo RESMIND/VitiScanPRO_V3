@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from pydantic import BaseModel, EmailStr
 from bson import ObjectId
 from datetime import datetime, timedelta
 from app.core.database import db
 from app.routes.auth import get_current_admin_user, sms_notifier, normalize_phone, is_valid_phone, generate_verification_code, store_verification_code, get_verification_code
 from app.core.notifications import telegram_notifier, email_notifier
+from app.core.security import require_admin_roles
 from app.core import config
 from app.core.utils import validate_object_id, sanitize_error_message
 import secrets
@@ -131,122 +132,169 @@ async def get_beta_requests(
         raise HTTPException(status_code=500, detail=sanitize_error_message(e))
 
 
-@router.post("/admin/beta-requests/{request_id}/approve", summary="Approve beta request")
-async def approve_beta_request(
+@router.put("/admin/beta-requests/{request_id}", summary="Admin action on beta request")
+async def admin_update_beta_request(
     request_id: str,
-    admin: dict = Depends(get_current_admin_user)
+    data: dict,
+    request: Request,
+    admin: dict = Depends(require_admin_roles("super_admin", "onboarding_admin"))
 ):
-    """
-    Admin only - approve a beta request
-    Generates registration token and sends email to user
+    """Unified admin endpoint to approve/reject/resend/update_notes on beta requests
+
+    Expected body (JSON): {"action": "approve"|"reject"|"resend"|"update_notes", "reason": "...", "admin_notes": "...", "override": true}
     """
     try:
+        action = data.get("action")
+        if not action:
+            raise HTTPException(status_code=400, detail="Action required")
+
         req_oid = validate_object_id(request_id, "request_id")
         beta_request = await db["beta_requests"].find_one({"_id": req_oid})
-        
         if not beta_request:
             raise HTTPException(status_code=404, detail="Request not found")
-        
-        if beta_request["status"] != "pending":
-            raise HTTPException(status_code=400, detail=f"Request is already {beta_request['status']}")
-        
-        # Generate cryptographic registration token (AES-GCM + HMAC)
-        from app.core import registration_tokens as rt
-        token = rt.generate_registration_token(req_oid, beta_request["email"])
-        header_payload = rt.validate_registration_token(token)
-        payload = header_payload["payload"]
-        nonce = payload.get("nonce")
-        expires_at = datetime.utcfromtimestamp(header_payload["header"].get("expires_at"))
 
-        # Update beta request
-        await db["beta_requests"].update_one(
-            {"_id": req_oid},
-            {
-                "$set": {
-                    "status": "approved",
-                    "approved_at": datetime.utcnow(),
-                    "token_expires_at": expires_at
-                }
+        # Capture admin context for audit
+        admin_id = str(admin.get("_id") or admin.get("sub") or admin.get("id"))
+        admin_email = admin.get("username") or admin.get("email")
+        ip = request.client.host if request.client else "unknown"
+        ua = request.headers.get("user-agent", "unknown")
+
+        from app.routes.audit import log_audit_event
+
+        # Approve
+        if action == "approve":
+            # Allow override only for super_admin
+            override = bool(data.get("override", False))
+            if beta_request.get("status") != "pending" and not (override and admin.get("role") == "super_admin"):
+                raise HTTPException(status_code=400, detail=f"Request is already {beta_request.get('status')}")
+
+            # Generate token
+            from app.core import registration_tokens as rt
+            token = rt.generate_registration_token(req_oid, beta_request["email"])
+            header_payload = rt.validate_registration_token(token)
+            payload = header_payload["payload"]
+            nonce = payload.get("nonce")
+            expires_at = datetime.utcfromtimestamp(header_payload["header"].get("expires_at"))
+
+            # Invalidate existing pending tokens for this request
+            await db["registration_tokens"].update_many({"beta_request_id": str(req_oid), "status": "pending"}, {"$set": {"status": "invalid", "invalidated_at": datetime.utcnow()}})
+
+            # Update beta request
+            await db["beta_requests"].update_one({"_id": req_oid}, {"$set": {"status": "approved", "approved_at": datetime.utcnow(), "token_expires_at": expires_at, "resend_count": 0, "last_resend_at": None}})
+
+            # Save new token record
+            await db["registration_tokens"].insert_one({"nonce": nonce, "beta_request_id": str(req_oid), "status": "pending", "created_at": datetime.utcnow(), "expires_at": expires_at})
+
+            # Send email
+            base_url = config.FRONTEND_BASE_URL
+            await email_notifier.send_beta_approved_email(to_email=beta_request["email"], name=beta_request["name"], token=token, base_url=base_url)
+
+            # Audit log
+            await log_audit_event(user_id=f"admin:{admin_id}", action="beta_request.approve", outcome="success", resource_type="beta_request", resource_id=str(req_oid), details={"admin_email": admin_email, "ip": ip, "user_agent": ua})
+
+            return {"message": "Request approved successfully", "registration_token": token}
+
+        # Reject
+        if action == "reject":
+            reason = data.get("reason")
+            admin_notes = data.get("admin_notes")
+            allowed_reasons = {
+                "incompatible": "Profil incompatibil cu versiunea beta",
+                "capacity": "Capacitate limitată în programul beta",
+                "already_client": "Deja client / deja pe platformă",
+                "insufficient": "Informații insuficiente / incomplete",
+                "other": "Alt motiv"
             }
-        )
 
-        # Save nonce in registration_tokens collection
-        await db["registration_tokens"].insert_one({
-            "nonce": nonce,
-            "beta_request_id": str(req_oid),
-            "status": "pending",
-            "created_at": datetime.utcnow(),
-            "expires_at": expires_at
-        })
+            if not reason or reason not in allowed_reasons:
+                raise HTTPException(status_code=400, detail="Invalid or missing reject reason")
 
-        # Send approval email with registration token (token is safe to include in link since encrypted + signed)
-        base_url = config.FRONTEND_BASE_URL
-        await email_notifier.send_beta_approved_email(
-            to_email=beta_request["email"],
-            name=beta_request["name"],
-            token=token,
-            base_url=base_url
-        )
+            if reason == "other" and (not admin_notes or not admin_notes.strip()):
+                raise HTTPException(status_code=400, detail="Admin notes required when reason is 'other'")
 
-        logger.info(f"Beta request approved and token generated: {request_id}")
+            # Allow override only for super_admin
+            override = bool(data.get("override", False))
+            if beta_request.get("status") != "pending" and not (override and admin.get("role") == "super_admin"):
+                raise HTTPException(status_code=400, detail=f"Request is already {beta_request.get('status')}")
 
-        return {
-            "message": "Request approved successfully! Email sent to user.",
-            "registration_token": token
-        }
-    
+            rejected_text = allowed_reasons.get(reason)
+            if reason == "other":
+                rejected_text = f"Alt motiv: {admin_notes}"
+
+            await db["beta_requests"].update_one({"_id": req_oid}, {"$set": {"status": "rejected", "rejected_reason": rejected_text, "admin_notes": admin_notes, "rejected_at": datetime.utcnow()}})
+
+            # Send rejection email with reason
+            await email_notifier.send_beta_rejected_email(to_email=beta_request["email"], name=beta_request["name"], reason=rejected_text, admin_notes=admin_notes)
+
+            await log_audit_event(user_id=f"admin:{admin_id}", action="beta_request.reject", outcome="success", resource_type="beta_request", resource_id=str(req_oid), details={"reason": reason, "admin_notes": admin_notes, "admin_email": admin_email, "ip": ip, "user_agent": ua})
+
+            return {"message": "Request rejected and email sent to user"}
+
+        # Resend token
+        if action == "resend":
+            # Only allowed on approved and not yet completed requests
+            if beta_request.get("status") != "approved":
+                raise HTTPException(status_code=400, detail="Only approved requests can be resent")
+            if beta_request.get("completed_at"):
+                raise HTTPException(status_code=400, detail="User already registered")
+
+            resend_count = int(beta_request.get("resend_count", 0))
+            if resend_count >= 3:
+                raise HTTPException(status_code=400, detail="Resend limit reached")
+
+            # Invalidate existing pending tokens
+            await db["registration_tokens"].update_many({"beta_request_id": str(req_oid), "status": "pending"}, {"$set": {"status": "invalid", "invalidated_at": datetime.utcnow()}})
+
+            # Generate new token
+            from app.core import registration_tokens as rt
+            token = rt.generate_registration_token(req_oid, beta_request["email"])            
+            header_payload = rt.validate_registration_token(token)
+            expires_at = datetime.utcfromtimestamp(header_payload["header"].get("expires_at"))
+            payload = header_payload["payload"]
+            nonce = payload.get("nonce")
+
+            # Insert token record
+            await db["registration_tokens"].insert_one({"nonce": nonce, "beta_request_id": str(req_oid), "status": "pending", "created_at": datetime.utcnow(), "expires_at": expires_at})
+
+            # Update counters
+            await db["beta_requests"].update_one({"_id": req_oid}, {"$inc": {"resend_count": 1}, "$set": {"token_expires_at": expires_at, "last_resend_at": datetime.utcnow()}})
+
+            # Send approval email with new token
+            base_url = config.FRONTEND_BASE_URL
+            await email_notifier.send_beta_approved_email(to_email=beta_request["email"], name=beta_request["name"], token=token, base_url=base_url)
+
+            await log_audit_event(user_id=f"admin:{admin_id}", action="beta_request.resend_token", outcome="success", resource_type="beta_request", resource_id=str(req_oid), details={"admin_email": admin_email, "ip": ip, "user_agent": ua, "resend_count": resend_count + 1})
+
+            return {"message": "Registration token resent and email sent", "registration_token": token}
+
+        # Update notes
+        if action == "update_notes":
+            admin_notes = data.get("admin_notes")
+            await db["beta_requests"].update_one({"_id": req_oid}, {"$set": {"admin_notes": admin_notes}})
+            await log_audit_event(user_id=f"admin:{admin_id}", action="beta_request.update_notes", outcome="success", resource_type="beta_request", resource_id=str(req_oid), details={"admin_email": admin_email, "admin_notes": admin_notes, "ip": ip, "user_agent": ua})
+            return {"message": "Admin notes updated"}
+
+        raise HTTPException(status_code=400, detail="Unknown action")
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error approving beta request: {str(e)}")
+        logger.error(f"Error performing admin action on beta request: {str(e)}")
         raise HTTPException(status_code=500, detail=sanitize_error_message(e))
 
 
-@router.post("/admin/beta-requests/{request_id}/reject", summary="Reject beta request")
-async def reject_beta_request(
+@router.post("/admin/beta-requests/{request_id}/reject", summary="Reject beta request (legacy)")
+async def reject_beta_request_legacy(
     request_id: str,
-    admin: dict = Depends(get_current_admin_user)
+    request: Request,
+    data: dict = Body(None),
+    admin: dict = Depends(require_admin_roles("super_admin", "onboarding_admin"))
 ):
-    """
-    Admin only - reject a beta request
-    Sends rejection email to user
-    """
-    try:
-        req_oid = validate_object_id(request_id, "request_id")
-        beta_request = await db["beta_requests"].find_one({"_id": req_oid})
-        
-        if not beta_request:
-            raise HTTPException(status_code=404, detail="Request not found")
-        
-        if beta_request["status"] != "pending":
-            raise HTTPException(status_code=400, detail=f"Request is already {beta_request['status']}")
-        
-        # Update beta request
-        await db["beta_requests"].update_one(
-            {"_id": req_oid},
-            {
-                "$set": {
-                    "status": "rejected",
-                    "rejected_reason": "Incompatibility with current beta test version"
-                }
-            }
-        )
-        
-        # Send rejection email
-        await email_notifier.send_beta_rejected_email(
-            to_email=beta_request["email"],
-            name=beta_request["name"]
-        )
-        
-        logger.info(f"Beta request rejected: {request_id}")
-        
-        return {"message": "Request rejected. Email sent to user."}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error rejecting beta request: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error rejecting request")
+    # Delegate to unified handler
+    body = {"action": "reject"}
+    if data:
+        body.update(data)
+    return await admin_update_beta_request(request_id, body, request, admin)
 
 
 @router.get("/beta-request/verify/{token}", summary="Verify beta registration token")

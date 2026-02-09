@@ -278,12 +278,48 @@ class Migration005AuditLogsAndTokens(Migration):
         await db.drop_collection("audit_logs")
         await db.drop_collection("capability_tokens")
 
+
+class Migration006UsernameIndex(Migration):
+    """Create case-insensitive unique index on users.username and add company_name field"""
+    def __init__(self):
+        super().__init__("006", "Add company_name field and case-insensitive unique index on username")
+    
+    async def up(self, db: AsyncIOMotorDatabase):
+        # Ensure company_name exists on user docs
+        await db.users.update_many(
+            {"company_name": {"$exists": False}},
+            {"$set": {"company_name": None}}
+        )
+        # Create case-insensitive unique index on username (collation strength 2)
+        try:
+            from pymongo.collation import Collation
+            await db.users.create_index(
+                [("username", 1)],
+                name="username_unique_ci",
+                unique=True,
+                collation=Collation(locale="en", strength=2)
+            )
+        except Exception as e:
+            # Log and continue; some Mongo setups may not support collation in tests
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Could not create CI username index: {e}")
+    
+    async def down(self, db: AsyncIOMotorDatabase):
+        # Remove company_name field and drop index
+        try:
+            await db.users.drop_index("username_unique_ci")
+        except Exception:
+            pass
+        await db.users.update_many({}, {"$unset": {"company_name": ""}})
+
 # Register migrations
 migration_manager.register(Migration001AddPhoneToUsers())
 migration_manager.register(Migration002AddCoordinatesParcels())
 migration_manager.register(Migration003BetaRequests())
 migration_manager.register(Migration004Relationships())
 migration_manager.register(Migration005AuditLogsAndTokens())
+migration_manager.register(Migration006UsernameIndex())
 
 # Export
 __all__ = ["migration_manager", "Migration", "MigrationManager"]

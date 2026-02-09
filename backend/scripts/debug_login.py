@@ -25,7 +25,7 @@ async def main():
             "accept_terms": True,
             "accept_privacy": True,
             "marketing_consent": False,
-            "phone": "+40700123456",
+            "phone": "+33612345678",
             "phone_verified": True,
         }
         print('Registering user...')

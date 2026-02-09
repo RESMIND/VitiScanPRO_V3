@@ -188,6 +188,23 @@ await db["consent_logs"].insert_one(consent_log)
 
 ---
 
+## Onboarding rules implemented ✅
+
+- **Username (display username)**
+  - Storage: lowercase, `-` used for spaces/underscores (e.g. `Jean Pierre` → `jean-pierre`)
+  - Rules: length 3–30, pattern `^[a-z0-9\-]{3,30}$`, reserved words blocked (`admin`, `root`, `system`, etc.)
+  - Uniqueness: enforced case-insensitive at DB level (unique index with collation) and checked at registration
+
+- **Phone**
+  - Region: France only (country code +33)
+  - Normalization: any `0...`, `0033...`, `+33...` or formatted input becomes canonical `+33XXXXXXXXX` for storage
+  - Validation: canonical format `^\+33[1-7][0-9]{8}$` (accepts 01-05 landlines, 06/07 mobiles)
+  - Uniqueness: phone is one-to-one with accounts (never re-usable)
+  - GDPR: phone is treated as sensitive data and protected in data stores
+
+These rules are implemented in `backend/app/routes/auth.py` and utility helpers in `backend/app/core/utils.py`.
+---
+
 ## Language Internationalization
 
 ### Romanian → English Translation Stats

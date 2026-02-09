@@ -189,7 +189,7 @@ async def test_user():
         "accept_privacy": True,
         "marketing_consent": False,
         # Pre-mark phone verified for CI tests that require verified users
-        "phone": "+40700123456",
+        "phone": "+33612345678",
         "phone_verified": True,
     }
 
